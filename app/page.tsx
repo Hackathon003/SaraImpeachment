@@ -62,15 +62,12 @@ export default function Home() {
     setVoting(true)
     try {
       const ipHash = await getIPHash()
-      console.log('ip hash:', ipHash)
 
-      const { data: existingVoter, error: checkError } = await supabase
+      const { data: existingVoter } = await supabase
         .from('voters')
         .select('id')
         .eq('ip_hash', ipHash)
         .maybeSingle()
-
-      console.log('existing voter:', existingVoter, 'check error:', checkError)
 
       if (existingVoter) {
         setMessage('Nakaboto ka na! Isang boto lang ang pinapayagan.')
@@ -80,15 +77,8 @@ export default function Home() {
         return
       }
 
-      const { error: voterError } = await supabase
-        .from('voters')
-        .insert({ ip_hash: ipHash })
-      console.log('voter insert error:', voterError)
-
-      const { error: voteError } = await supabase
-        .from('votes')
-        .insert({ choice: selectedChoice, ip_hash: ipHash })
-      console.log('vote insert error:', voteError)
+      await supabase.from('voters').insert({ ip_hash: ipHash })
+      await supabase.from('votes').insert({ choice: selectedChoice, ip_hash: ipHash })
 
       const expires = new Date()
       expires.setDate(expires.getDate() + 30)
@@ -96,6 +86,7 @@ export default function Home() {
 
       setVoted(true)
       setMessage('Salamat sa iyong boto!')
+      await new Promise(resolve => setTimeout(resolve, 500))
       await fetchResults()
     } catch (err) {
       console.log('catch error:', err)
@@ -158,24 +149,40 @@ export default function Home() {
             Ano ang iyong opinyon bilang isang Pilipino?
           </div>
 
-          {!voted ? (
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <button
-                onClick={() => handleVote('impeach')}
-                disabled={voting}
-                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#c0392b', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: voting ? 'not-allowed' : 'pointer', opacity: voting ? 0.6 : 1 }}
-              >
-                {voting ? 'Naglo-load...' : 'IPATUPAD ANG IMPEACH'}
-              </button>
-              <button
-                onClick={() => handleVote('ipagtanggol')}
-                disabled={voting}
-                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#1a6e2e', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: voting ? 'not-allowed' : 'pointer', opacity: voting ? 0.6 : 1 }}
-              >
-                {voting ? 'Naglo-load...' : 'IPAGTANGGOL SI SARA'}
-              </button>
-            </div>
-          ) : (
+          {/* Buttons — always visible, disabled after voting */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <button
+              onClick={() => !voted && handleVote('impeach')}
+              disabled={voting || voted}
+              style={{
+                flex: 1, padding: '12px 8px', border: 'none',
+                background: voted ? '#888' : '#c0392b',
+                color: '#fff', fontSize: '13px', fontWeight: '700',
+                cursor: voted || voting ? 'not-allowed' : 'pointer',
+                opacity: voted || voting ? 0.5 : 1,
+                transition: 'all 0.3s'
+              }}
+            >
+              IPATUPAD ANG IMPEACH
+            </button>
+            <button
+              onClick={() => !voted && handleVote('ipagtanggol')}
+              disabled={voting || voted}
+              style={{
+                flex: 1, padding: '12px 8px', border: 'none',
+                background: voted ? '#888' : '#1a6e2e',
+                color: '#fff', fontSize: '13px', fontWeight: '700',
+                cursor: voted || voting ? 'not-allowed' : 'pointer',
+                opacity: voted || voting ? 0.5 : 1,
+                transition: 'all 0.3s'
+              }}
+            >
+              IPAGTANGGOL SI SARA
+            </button>
+          </div>
+
+          {/* Results — only show after voting */}
+          {voted && (
             <div>
               {message && (
                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#1a6e2e', textAlign: 'center', marginBottom: '10px' }}>
