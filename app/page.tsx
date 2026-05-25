@@ -23,49 +23,72 @@ export default function Home() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
 
+  async function checkIfVoted() {
+    const cookie = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('sara_voted='))
+    if (cookie) {
+      setVoted(true)
+      await fetchResults()
+    }
+    setLoading(false)
+  }
+
+  async function fetchResults() {
+    const { count: impeachCount } = await supabase
+      .from('votes')
+      .select('*', { count: 'exact', head: true })
+      .eq('choice', 'impeach')
+
+    const { count: ipagtanggolCount } = await supabase
+      .from('votes')
+      .select('*', { count: 'exact', head: true })
+      .eq('choice', 'ipagtanggol')
+
+    const imp = impeachCount ?? 0
+    const sav = ipagtanggolCount ?? 0
+
+    setResults({ impeach: imp, ipagtanggol: sav })
+    setTotal(imp + sav)
+  }
+
   useEffect(() => {
     checkIfVoted()
     fetchResults()
   }, [])
 
-  async function checkIfVoted() {
-    const cookie = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('sara_voted='))
-    if (cookie) setVoted(true)
-    setLoading(false)
-  }
-
-  async function fetchResults() {
-    const { data } = await supabase.from('votes').select('choice')
-    if (data) {
-      const impeach = data.filter(v => v.choice === 'impeach').length
-      const ipagtanggol = data.filter(v => v.choice === 'ipagtanggol').length
-      setResults({ impeach, ipagtanggol })
-      setTotal(data.length)
-    }
-  }
-
   async function handleVote(selectedChoice: string) {
+    console.log('voting for:', selectedChoice)
     setVoting(true)
     try {
       const ipHash = await getIPHash()
+      console.log('ip hash:', ipHash)
 
-      const { data: existingVoter } = await supabase
+      const { data: existingVoter, error: checkError } = await supabase
         .from('voters')
         .select('id')
         .eq('ip_hash', ipHash)
-        .single()
+        .maybeSingle()
+
+      console.log('existing voter:', existingVoter, 'check error:', checkError)
 
       if (existingVoter) {
         setMessage('Nakaboto ka na! Isang boto lang ang pinapayagan.')
         setVoted(true)
+        await fetchResults()
         setVoting(false)
         return
       }
 
-      await supabase.from('voters').insert({ ip_hash: ipHash })
-      await supabase.from('votes').insert({ choice: selectedChoice, ip_hash: ipHash })
+      const { error: voterError } = await supabase
+        .from('voters')
+        .insert({ ip_hash: ipHash })
+      console.log('voter insert error:', voterError)
+
+      const { error: voteError } = await supabase
+        .from('votes')
+        .insert({ choice: selectedChoice, ip_hash: ipHash })
+      console.log('vote insert error:', voteError)
 
       const expires = new Date()
       expires.setDate(expires.getDate() + 30)
@@ -74,7 +97,8 @@ export default function Home() {
       setVoted(true)
       setMessage('Salamat sa iyong boto!')
       await fetchResults()
-    } catch {
+    } catch (err) {
+      console.log('catch error:', err)
       setMessage('May error. Subukan muli.')
     }
     setVoting(false)
@@ -104,12 +128,13 @@ export default function Home() {
           BREAKING: Ipinagpapatuloy ang impeachment trial ni Sara Duterte sa Senado
         </div>
 
-       <video
-  src="https://upload.wikimedia.org/wikipedia/commons/c/c2/Vice_President_Sara_Duterte_speech_on_first_anniversary_of_the_arrest_of_former_President_Rodrigo_Duterte.webm"
-  controls
-  playsInline
-  style={{ width: '100%', height: '200px', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
-/>
+        {/* Video */}
+        <video
+          src="https://upload.wikimedia.org/wikipedia/commons/c/c2/Vice_President_Sara_Duterte_speech_on_first_anniversary_of_the_arrest_of_former_President_Rodrigo_Duterte.webm"
+          controls
+          playsInline
+          style={{ width: '100%', height: '200px', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
+        />
 
         {/* Body */}
         <div style={{ padding: '14px' }}>
@@ -133,22 +158,21 @@ export default function Home() {
             Ano ang iyong opinyon bilang isang Pilipino?
           </div>
 
-          {/* Buttons or Results */}
           {!voted ? (
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
               <button
                 onClick={() => handleVote('impeach')}
                 disabled={voting}
-                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#c0392b', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: voting ? 0.6 : 1 }}
+                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#c0392b', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: voting ? 'not-allowed' : 'pointer', opacity: voting ? 0.6 : 1 }}
               >
-                IPATUPAD ANG IMPEACH
+                {voting ? 'Naglo-load...' : 'IPATUPAD ANG IMPEACH'}
               </button>
               <button
                 onClick={() => handleVote('ipagtanggol')}
                 disabled={voting}
-                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#1a6e2e', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: voting ? 0.6 : 1 }}
+                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#1a6e2e', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: voting ? 'not-allowed' : 'pointer', opacity: voting ? 0.6 : 1 }}
               >
-                IPAGTANGGOL SI SARA
+                {voting ? 'Naglo-load...' : 'IPAGTANGGOL SI SARA'}
               </button>
             </div>
           ) : (
@@ -159,7 +183,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Impeach bar */}
               <div style={{ marginBottom: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#555', marginBottom: '3px' }}>
                   <span>I-Impeach</span>
@@ -170,7 +193,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Ipagtanggol bar */}
               <div style={{ marginBottom: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#555', marginBottom: '3px' }}>
                   <span>Ipagtanggol</span>
