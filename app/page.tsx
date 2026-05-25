@@ -34,17 +34,6 @@ export default function Home() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
 
-  async function checkIfVoted() {
-    const cookie = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('sara_voted='))
-    if (cookie) {
-      setVoted(true)
-      await fetchResults()
-    }
-    setLoading(false)
-  }
-
   async function fetchResults() {
     const { count: impeachCount } = await supabase
       .from('votes')
@@ -61,6 +50,39 @@ export default function Home() {
 
     setResults({ impeach: imp, ipagtanggol: sav })
     setTotal(imp + sav)
+  }
+
+  async function checkIfVoted() {
+    const cookie = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('sara_voted='))
+
+    if (cookie) {
+      setVoted(true)
+      setMessage('Nakaboto ka na! Salamat sa iyong partisipasyon.')
+      await fetchResults()
+      setLoading(false)
+      return
+    }
+
+    try {
+      const ipHash = await getIPHash()
+      const { data: existingVoter } = await supabase
+        .from('voters')
+        .select('id')
+        .eq('ip_hash', ipHash)
+        .maybeSingle()
+
+      if (existingVoter) {
+        setVoted(true)
+        setMessage('Nakaboto ka na! Salamat sa iyong partisipasyon.')
+        await fetchResults()
+      }
+    } catch {
+      // ignore
+    }
+
+    setLoading(false)
   }
 
   useEffect(() => {
@@ -84,7 +106,7 @@ export default function Home() {
       console.log('existing voter:', existingVoter)
 
       if (existingVoter) {
-        setMessage('Nakaboto ka na! Isang boto lang ang pinapayagan.')
+        setMessage('Nakaboto ka na! Salamat sa iyong partisipasyon.')
         setVoted(true)
         await fetchResults()
         setVoting(false)
@@ -165,44 +187,50 @@ export default function Home() {
             Ano ang iyong opinyon bilang isang Pilipino?
           </div>
 
-          {/* Buttons — always visible, disabled after voting */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <button
-              onClick={() => !voted && handleVote('impeach')}
-              disabled={voting || voted}
-              style={{
-                flex: 1, padding: '12px 8px', border: 'none',
-                background: voted ? '#888' : '#c0392b',
-                color: '#fff', fontSize: '13px', fontWeight: '700',
-                cursor: voted || voting ? 'not-allowed' : 'pointer',
-                opacity: voted || voting ? 0.5 : 1,
-                transition: 'all 0.3s'
-              }}
-            >
-              {voting ? 'Naglo-load...' : 'IPATUPAD ANG IMPEACH'}
-            </button>
-            <button
-              onClick={() => !voted && handleVote('ipagtanggol')}
-              disabled={voting || voted}
-              style={{
-                flex: 1, padding: '12px 8px', border: 'none',
-                background: voted ? '#888' : '#1a6e2e',
-                color: '#fff', fontSize: '13px', fontWeight: '700',
-                cursor: voted || voting ? 'not-allowed' : 'pointer',
-                opacity: voted || voting ? 0.5 : 1,
-                transition: 'all 0.3s'
-              }}
-            >
-              {voting ? 'Naglo-load...' : 'IPAGTANGGOL SI SARA'}
-            </button>
-          </div>
-
-          {/* Results — only show after voting */}
-          {voted && (
+          {/* Show buttons if not voted, show results if voted */}
+          {!voted ? (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <button
+                onClick={() => handleVote('impeach')}
+                disabled={voting}
+                style={{
+                  flex: 1, padding: '12px 8px', border: 'none',
+                  background: '#c0392b', color: '#fff',
+                  fontSize: '13px', fontWeight: '700',
+                  cursor: voting ? 'not-allowed' : 'pointer',
+                  opacity: voting ? 0.6 : 1,
+                  transition: 'all 0.3s'
+                }}
+              >
+                {voting ? 'Naglo-load...' : 'IPATUPAD ANG IMPEACH'}
+              </button>
+              <button
+                onClick={() => handleVote('ipagtanggol')}
+                disabled={voting}
+                style={{
+                  flex: 1, padding: '12px 8px', border: 'none',
+                  background: '#1a6e2e', color: '#fff',
+                  fontSize: '13px', fontWeight: '700',
+                  cursor: voting ? 'not-allowed' : 'pointer',
+                  opacity: voting ? 0.6 : 1,
+                  transition: 'all 0.3s'
+                }}
+              >
+                {voting ? 'Naglo-load...' : 'IPAGTANGGOL SI SARA'}
+              </button>
+            </div>
+          ) : (
             <div>
+              {/* Already voted message */}
               {message && (
-                <div style={{ fontSize: '13px', fontWeight: '700', color: '#1a6e2e', textAlign: 'center', marginBottom: '10px' }}>
-                  {message}
+                <div style={{
+                  fontSize: '13px', fontWeight: '700',
+                  color: '#c0392b', textAlign: 'center',
+                  marginBottom: '12px', padding: '8px',
+                  border: '1px solid #c0392b',
+                  background: '#fff5f5'
+                }}>
+                  ✅ {message}
                 </div>
               )}
 
