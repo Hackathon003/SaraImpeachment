@@ -1,65 +1,199 @@
-import Image from "next/image";
+'use client'
+
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+
+async function getIPHash(): Promise<string> {
+  const res = await fetch('https://api.ipify.org?format=json')
+  const data = await res.json()
+  const hash = await window.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(data.ip)
+  )
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+  const [voted, setVoted] = useState(false)
+  const [results, setResults] = useState({ impeach: 0, ipagtanggol: 0 })
+  const [total, setTotal] = useState(0)
+  const [voting, setVoting] = useState(false)
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    checkIfVoted()
+    fetchResults()
+  }, [])
+
+  async function checkIfVoted() {
+    const cookie = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('sara_voted='))
+    if (cookie) setVoted(true)
+    setLoading(false)
+  }
+
+  async function fetchResults() {
+    const { data } = await supabase.from('votes').select('choice')
+    if (data) {
+      const impeach = data.filter(v => v.choice === 'impeach').length
+      const ipagtanggol = data.filter(v => v.choice === 'ipagtanggol').length
+      setResults({ impeach, ipagtanggol })
+      setTotal(data.length)
+    }
+  }
+
+  async function handleVote(selectedChoice: string) {
+    setVoting(true)
+    try {
+      const ipHash = await getIPHash()
+
+      const { data: existingVoter } = await supabase
+        .from('voters')
+        .select('id')
+        .eq('ip_hash', ipHash)
+        .single()
+
+      if (existingVoter) {
+        setMessage('Nakaboto ka na! Isang boto lang ang pinapayagan.')
+        setVoted(true)
+        setVoting(false)
+        return
+      }
+
+      await supabase.from('voters').insert({ ip_hash: ipHash })
+      await supabase.from('votes').insert({ choice: selectedChoice, ip_hash: ipHash })
+
+      const expires = new Date()
+      expires.setDate(expires.getDate() + 30)
+      document.cookie = `sara_voted=${selectedChoice}; expires=${expires.toUTCString()}; path=/`
+
+      setVoted(true)
+      setMessage('Salamat sa iyong boto!')
+      await fetchResults()
+    } catch {
+      setMessage('May error. Subukan muli.')
+    }
+    setVoting(false)
+  }
+
+  const impeachPct = total > 0 ? Math.round((results.impeach / total) * 100) : 0
+  const ipagtanggolPct = total > 0 ? Math.round((results.ipagtanggol / total) * 100) : 0
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial, sans-serif' }}>
+      <p>Naglo-load...</p>
     </div>
-  );
+  )
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem 1rem', fontFamily: 'Arial, sans-serif' }}>
+      <div style={{ maxWidth: '480px', width: '100%', background: '#fff', border: '0.5px solid #ddd' }}>
+
+        {/* Top bar */}
+        <div style={{ background: '#c0392b', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ background: '#fff', color: '#c0392b', fontSize: '10px', fontWeight: '700', padding: '2px 6px', letterSpacing: '1px' }}>LIVE</span>
+          <span style={{ color: '#fff', fontSize: '12px', fontWeight: '700', letterSpacing: '1px' }}>BALITA NGAYON — IMPEACHMENT TRIAL</span>
+        </div>
+
+        {/* Ticker */}
+        <div style={{ background: '#1a1a1a', color: '#fff', fontSize: '11px', padding: '4px 12px' }}>
+          BREAKING: Ipinagpapatuloy ang impeachment trial ni Sara Duterte sa Senado
+        </div>
+
+       <video
+  src="https://upload.wikimedia.org/wikipedia/commons/c/c2/Vice_President_Sara_Duterte_speech_on_first_anniversary_of_the_arrest_of_former_President_Rodrigo_Duterte.webm"
+  controls
+  playsInline
+  style={{ width: '100%', height: '200px', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
+/>
+
+        {/* Body */}
+        <div style={{ padding: '14px' }}>
+          <span style={{ background: '#c0392b', color: '#fff', fontSize: '10px', fontWeight: '700', padding: '2px 8px', letterSpacing: '1px', display: 'inline-block', marginBottom: '8px' }}>IMPEACHMENT</span>
+
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#1a1a1a', lineHeight: 1.2, marginBottom: '6px' }}>
+            Dapat Bang I-Impeach si Sara Duterte?
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>
+            {new Date().toLocaleDateString('fil-PH', { year: 'numeric', month: 'long', day: 'numeric' })} &nbsp;|&nbsp; Opinyon ng Bayan
+          </div>
+
+          <div style={{ fontSize: '12px', color: '#555', lineHeight: 1.6, marginBottom: '10px', borderLeft: '3px solid #c0392b', paddingLeft: '8px' }}>
+            Si Bise Presidente Sara Duterte ay nakaharap sa impeachment trial dahil sa mga alegasyon ng maling paggamit ng pondo ng gobyerno, pagbabanta sa buhay ng mga opisyal, at paglabag sa Konstitusyon. Kasalukuyang dinidinig ng Senado bilang Impeachment Court.
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '0.5px solid #ddd', margin: '10px 0' }} />
+
+          <div style={{ fontSize: '13px', fontWeight: '700', color: '#1a1a1a', textAlign: 'center', marginBottom: '10px' }}>
+            Ano ang iyong opinyon bilang isang Pilipino?
+          </div>
+
+          {/* Buttons or Results */}
+          {!voted ? (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <button
+                onClick={() => handleVote('impeach')}
+                disabled={voting}
+                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#c0392b', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: voting ? 0.6 : 1 }}
+              >
+                IPATUPAD ANG IMPEACH
+              </button>
+              <button
+                onClick={() => handleVote('ipagtanggol')}
+                disabled={voting}
+                style={{ flex: 1, padding: '12px 8px', border: 'none', background: '#1a6e2e', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: voting ? 0.6 : 1 }}
+              >
+                IPAGTANGGOL SI SARA
+              </button>
+            </div>
+          ) : (
+            <div>
+              {message && (
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#1a6e2e', textAlign: 'center', marginBottom: '10px' }}>
+                  {message}
+                </div>
+              )}
+
+              {/* Impeach bar */}
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#555', marginBottom: '3px' }}>
+                  <span>I-Impeach</span>
+                  <span>{results.impeach.toLocaleString()} boto ({impeachPct}%)</span>
+                </div>
+                <div style={{ height: '8px', background: '#eee' }}>
+                  <div style={{ width: `${impeachPct}%`, height: '100%', background: '#c0392b', transition: 'width 0.5s' }} />
+                </div>
+              </div>
+
+              {/* Ipagtanggol bar */}
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#555', marginBottom: '3px' }}>
+                  <span>Ipagtanggol</span>
+                  <span>{results.ipagtanggol.toLocaleString()} boto ({ipagtanggolPct}%)</span>
+                </div>
+                <div style={{ height: '8px', background: '#eee' }}>
+                  <div style={{ width: `${ipagtanggolPct}%`, height: '100%', background: '#1a6e2e', transition: 'width 0.5s' }} />
+                </div>
+              </div>
+
+              <div style={{ fontSize: '11px', color: '#888', textAlign: 'center', marginTop: '6px' }}>
+                Kabuuang Boto: <strong>{total.toLocaleString()}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ background: '#1a1a1a', color: '#aaa', fontSize: '10px', padding: '6px 12px', textAlign: 'center' }}>
+          Para sa layuning pang-opinyon lamang. Hindi ito opisyal na boto ng pamahalaan.
+        </div>
+
+      </div>
+    </div>
+  )
 }
