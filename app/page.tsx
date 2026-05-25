@@ -4,15 +4,26 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 async function getIPHash(): Promise<string> {
-  const res = await fetch('https://api.ipify.org?format=json')
-  const data = await res.json()
-  const hash = await window.crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(data.ip)
-  )
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
+  try {
+    const res = await fetch('https://api.ipify.org?format=json')
+    const data = await res.json()
+    const hash = await window.crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(data.ip)
+    )
+    return Array.from(new Uint8Array(hash))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+  } catch {
+    const fallback = Math.random().toString(36).substring(2) + Date.now().toString(36)
+    const hash = await window.crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(fallback)
+    )
+    return Array.from(new Uint8Array(hash))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+  }
 }
 
 export default function Home() {
@@ -62,12 +73,15 @@ export default function Home() {
     setVoting(true)
     try {
       const ipHash = await getIPHash()
+      console.log('ip hash:', ipHash)
 
       const { data: existingVoter } = await supabase
         .from('voters')
         .select('id')
         .eq('ip_hash', ipHash)
         .maybeSingle()
+
+      console.log('existing voter:', existingVoter)
 
       if (existingVoter) {
         setMessage('Nakaboto ka na! Isang boto lang ang pinapayagan.')
@@ -79,6 +93,8 @@ export default function Home() {
 
       await supabase.from('voters').insert({ ip_hash: ipHash })
       await supabase.from('votes').insert({ choice: selectedChoice, ip_hash: ipHash })
+
+      console.log('vote inserted!')
 
       const expires = new Date()
       expires.setDate(expires.getDate() + 30)
@@ -163,7 +179,7 @@ export default function Home() {
                 transition: 'all 0.3s'
               }}
             >
-              IPATUPAD ANG IMPEACH
+              {voting ? 'Naglo-load...' : 'IPATUPAD ANG IMPEACH'}
             </button>
             <button
               onClick={() => !voted && handleVote('ipagtanggol')}
@@ -177,7 +193,7 @@ export default function Home() {
                 transition: 'all 0.3s'
               }}
             >
-              IPAGTANGGOL SI SARA
+              {voting ? 'Naglo-load...' : 'IPAGTANGGOL SI SARA'}
             </button>
           </div>
 
